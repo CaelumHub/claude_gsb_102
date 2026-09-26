@@ -113,7 +113,7 @@ class ApiRouter:
 
         # --- users collection ---
         if route == "/users" and method == "GET":
-            page = _to_int(query.get("page"), 0)
+            page = _to_int(query.get("page"), 1)
             size = min(max(_to_int(query.get("size"), 20), 1), 500)
             return 200, self.service.list_users(
                 page=page, size=size,

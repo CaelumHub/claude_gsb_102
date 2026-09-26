@@ -125,11 +125,16 @@ class SocialGraphService:
     # ------------------------------------------------------------------
     def list_users(self, page: int = 1, size: int = 20, search: str = "", tag: str = "") -> dict:
         users = self.store.load_users()
+        search_term = (search or "").strip().lower()
         items = []
         for uid, u in users.items():
-            if search:
-                haystack = str(uid)
-                if search not in haystack:
+            if search_term:
+                # Match against both the display name and the numeric id
+                # (substring, case-insensitive).  Searching by name used to
+                # never return anything because only str(uid) was checked.
+                name = str(u.get("name", ""))
+                haystack = name + "\n" + str(uid)
+                if search_term not in haystack.lower():
                     continue
             if tag:
                 if tag not in u.get("tags", []):
@@ -139,15 +144,22 @@ class SocialGraphService:
                 record[key] = value
             record["uid"] = uid
             items.append(record)
-        total = len(users)
+        # Stable ordering: oldest-created first, id ascending as the
+        # tie-breaker so equal timestamps (bulk-seeded users) and freshly
+        # created users never jump between pages.
         sort_field = config.DEFAULT_USER_SORT
         items.sort(
-            key=lambda x: (x.get(sort_field, 0), -x["id"]),
-            reverse=True,
+            key=lambda x: (x.get(sort_field, 0) or 0, x["id"]),
         )
+        # Pages are 1-based.  A non-positive cursor is clamped to page 1; a
+        # cursor past the last page simply yields an empty slice.  This makes
+        # adjacent pages partition the list with no overlap or gaps.
+        if page < 1:
+            page = 1
+        if size < 1:
+            size = 20
+        total = len(items)
         start = (page - 1) * size
-        if start < 0:
-            start = 0
         end = start + size
         page_out = items[start:end]
         return {

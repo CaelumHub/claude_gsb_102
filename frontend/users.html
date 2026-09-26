@@ -72,6 +72,14 @@
       api.listUsers({ page: state.page, size: state.size, search: state.search, tag: state.tag })
         .then((d) => {
           state.total = d.total;
+          // If the current page is now out of range (e.g. after a delete or a
+          // narrower search), step back to the last valid page and reload.
+          const totalPages = Math.max(1, Math.ceil(d.total / state.size));
+          if (state.page > totalPages) {
+            state.page = totalPages;
+            loadUsers();
+            return;
+          }
           document.getElementById("totalInfo").textContent = "共 " + d.total + " 人";
           C.renderTable(box, [
             { key: "id", label: "ID", align: "right", render: (r) => '<span class="mono">' + r.id + "</span>" },
@@ -182,6 +190,10 @@
       try {
         const u = await api.createUser({ name, tags: selectedTags, attributes: { city, age } });
         C.toast("已创建用户 #" + u.id, "success");
+        // New users sort to the tail of the list; jump to the last page so
+        // the created record is visible immediately instead of leaving the
+        // user on an unchanged first page.
+        state.page = Math.max(1, Math.ceil((state.total + 1) / state.size));
         loadUsers();
       } catch (e) { C.toast(e.message, "error"); }
     }

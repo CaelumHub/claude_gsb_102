@@ -169,15 +169,27 @@ class GraphStore:
     # ---- users ------------------------------------------------------------
     def load_users(self) -> Dict[int, dict]:
         data = config.read_json(config.USERS_FILE, {"users": {}})
-        users = data.get("users", {})
-        return {int(k): v for k, v in users.items()}
+        users = {}
+        for k, v in data.get("users", {}).items():
+            rec = dict(v)
+            # Normalise the timestamp to the canonical ``created_at`` key.
+            # Records on disk may carry ``created_at_ms`` (the key used by a
+            # previous save implementation); without this mapping the user-list
+            # sort silently degrades to ordering by id alone.
+            if "created_at" not in rec:
+                rec["created_at"] = rec.pop("created_at_ms", 0) or 0
+            else:
+                rec.pop("created_at_ms", None)
+            users[int(k)] = rec
+        return users
 
     def save_users(self, users: Dict[int, dict]) -> None:
         serialised = {}
         for k, v in users.items():
             rec = dict(v)
-            if "created_at" in rec:
-                rec["created_at_ms"] = rec.pop("created_at")
+            # Keep the canonical ``created_at`` key on disk too.
+            if "created_at" not in rec and "created_at_ms" in rec:
+                rec["created_at"] = rec.pop("created_at_ms")
             serialised[str(k)] = rec
         config.atomic_write_json(config.USERS_FILE, {"users": serialised})
 
