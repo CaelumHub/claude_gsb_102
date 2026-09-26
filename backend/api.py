@@ -113,7 +113,9 @@ class ApiRouter:
 
         # --- users collection ---
         if route == "/users" and method == "GET":
-            page = _to_int(query.get("page"), 0)
+            # 1-based pagination cursor: page 0 / invalid values used to
+            # silently alias page 1, duplicating rows across adjacent pages.
+            page = max(_to_int(query.get("page"), 1), 1)
             size = min(max(_to_int(query.get("size"), 20), 1), 500)
             return 200, self.service.list_users(
                 page=page, size=size,

@@ -170,14 +170,25 @@ class GraphStore:
     def load_users(self) -> Dict[int, dict]:
         data = config.read_json(config.USERS_FILE, {"users": {}})
         users = data.get("users", {})
-        return {int(k): v for k, v in users.items()}
+        out: Dict[int, dict] = {}
+        for k, v in users.items():
+            rec = dict(v)
+            # Legacy files stored the creation timestamp as ``created_at_ms``;
+            # migrate it to the canonical ``created_at`` so that downstream
+            # sorting (config.DEFAULT_USER_SORT) always sees the field.
+            if "created_at" not in rec and "created_at_ms" in rec:
+                rec["created_at"] = rec.pop("created_at_ms")
+            out[int(k)] = rec
+        return out
 
     def save_users(self, users: Dict[int, dict]) -> None:
         serialised = {}
         for k, v in users.items():
             rec = dict(v)
-            if "created_at" in rec:
-                rec["created_at_ms"] = rec.pop("created_at")
+            # Keep the canonical ``created_at`` field name; older data may
+            # still carry ``created_at_ms`` -- normalise on write too.
+            if "created_at" not in rec and "created_at_ms" in rec:
+                rec["created_at"] = rec.pop("created_at_ms")
             serialised[str(k)] = rec
         config.atomic_write_json(config.USERS_FILE, {"users": serialised})
 

@@ -125,11 +125,13 @@ class SocialGraphService:
     # ------------------------------------------------------------------
     def list_users(self, page: int = 1, size: int = 20, search: str = "", tag: str = "") -> dict:
         users = self.store.load_users()
+        needle = (search or "").strip().lower()
         items = []
         for uid, u in users.items():
-            if search:
-                haystack = str(uid)
-                if search not in haystack:
+            if needle:
+                # Match either the numeric id or the (case-insensitive) name.
+                name = str(u.get("name", "")).lower()
+                if needle not in str(uid) and needle not in name:
                     continue
             if tag:
                 if tag not in u.get("tags", []):
@@ -139,15 +141,20 @@ class SocialGraphService:
                 record[key] = value
             record["uid"] = uid
             items.append(record)
-        total = len(users)
+        # The total must reflect the *filtered* result set: it drives both
+        # the "共 N 人" label and the page count in the UI.
+        total = len(items)
+        # Stable total order: creation time ascending (oldest first, so a
+        # newly created user always lands at the very end of the list), with
+        # the unique id as final tie-break.  A total order is what guarantees
+        # that offset paging never repeats or skips rows between requests.
         sort_field = config.DEFAULT_USER_SORT
-        items.sort(
-            key=lambda x: (x.get(sort_field, 0), -x["id"]),
-            reverse=True,
-        )
+        items.sort(key=lambda x: (_sortable(x.get(sort_field)), x["id"]))
+        # Normalise the pagination cursor to a valid 1-based range so that
+        # page 0 / negative values can never alias the first page.
+        page = max(int(page), 1)
+        size = max(int(size), 1)
         start = (page - 1) * size
-        if start < 0:
-            start = 0
         end = start + size
         page_out = items[start:end]
         return {
@@ -570,6 +577,23 @@ class SocialGraphService:
             "profiles": len(profiles),
             "shards": self.store.shard_usage(),
         }
+
+
+def _sortable(value) -> float:
+    """Coerce a sort-field value to a comparable number.
+
+    Missing / None / non-numeric values all map to 0.0 so that the sort key
+    is always a well-defined total order (mixed types would raise TypeError
+    and legacy records without the field would otherwise be unordered).
+    """
+    if isinstance(value, bool):
+        return float(value)
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _count_components(graph: Graph) -> int:
